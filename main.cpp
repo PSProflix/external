@@ -1,17 +1,20 @@
-#include <iostream>
 #include <windows.h>
 #include <d3d11.h>
 #include <dwmapi.h>
-#include "imgui.h"
-#include "imgui_impl_win32.h"
-#include "imgui_impl_dx11.h"
+#include <iostream>
+#include "imgui/imgui.h"
+#include "imgui/backends/imgui_impl_win32.h"
+#include "imgui/backends/imgui_impl_dx11.h"
 #include "Memory.h"
 #include "Vector.h"
-#include "offsets_new/offsets.h"
-#include "offsets_new/client.h"
+#include "offsets/offsets.hpp"
+#include "offsets/client_dll.hpp"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dwmapi.lib")
+
+namespace offsets = cs2_dumper::offsets::client_dll;
+namespace schema = cs2_dumper::schemas::client_dll;
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -130,48 +133,26 @@ int main() {
         ImGui::NewFrame();
 
         uintptr_t localPlayerPawn = mem.Read<uintptr_t>(client + offsets::dwLocalPlayerPawn);
-        if (!localPlayerPawn) {
-            uintptr_t localPlayerController = mem.Read<uintptr_t>(client + offsets::dwLocalPlayerController);
-            if (localPlayerController) {
-                localPlayerPawn = mem.Read<uintptr_t>(localPlayerController + schema::m_hPlayerPawn);
-                // Schema handle read - need to resolve from entity list
-                if (localPlayerPawn) {
-                    uintptr_t entityList = mem.Read<uintptr_t>(client + offsets::dwEntityList);
-                    uintptr_t pListEntry = mem.Read<uintptr_t>(entityList + 0x8 * ((localPlayerPawn & 0x7FFF) >> 9) + 16);
-                    if (pListEntry) {
-                        localPlayerPawn = mem.Read<uintptr_t>(pListEntry + 120 * (localPlayerPawn & 0x1FF));
-                    }
-                }
-            }
-        }
-
+        
         if (localPlayerPawn) {
-            int localTeam = mem.Read<int>(localPlayerPawn + schema::m_iTeamNum);
+            int localTeam = mem.Read<int>(localPlayerPawn + schema::C_BaseEntity::m_iTeamNum);
             uintptr_t entityList = mem.Read<uintptr_t>(client + offsets::dwEntityList);
             Matrix4x4 viewMatrix = mem.Read<Matrix4x4>(client + offsets::dwViewMatrix);
 
-            // Debug Info
             ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 10), ImColor(255, 255, 255), "ESP Active");
-            char buf[128];
-            sprintf_s(buf, "Client: 0x%llX", client);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 25), ImColor(255, 255, 255), buf);
-            sprintf_s(buf, "Local Pawn: 0x%llX", localPlayerPawn);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 40), ImColor(255, 255, 255), buf);
             
-            // Crosshair to verify coordinates
             ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2 - 10, screenHeight / 2), ImVec2(screenWidth / 2 + 10, screenHeight / 2), ImColor(255, 255, 255), 1.0f);
             ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2, screenHeight / 2 - 10), ImVec2(screenWidth / 2, screenHeight / 2 + 10), ImColor(255, 255, 255), 1.0f);
 
-            // ViewMatrix Debug
-            sprintf_s(buf, "VM[0]: %.2f %.2f %.2f %.2f", viewMatrix.m[0][0], viewMatrix.m[0][1], viewMatrix.m[0][2], viewMatrix.m[0][3]);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 70), ImColor(255, 255, 255), buf);
-            sprintf_s(buf, "VM[3]: %.2f %.2f %.2f %.2f", viewMatrix.m[3][0], viewMatrix.m[3][1], viewMatrix.m[3][2], viewMatrix.m[3][3]);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 85), ImColor(255, 255, 255), buf);
-
             int entitiesFound = 0;
             int drawnEntities = 0;
-            bool firstW2S = false;
+            
+            Vector3 firstEntityPos = { 0, 0, 0 };
+            float firstEntityW = 0;
+            Vector2 firstEntityScreen = { 0, 0 };
             uintptr_t firstSceneNode = 0;
+            bool firstW2S = false;
+
             for (int i = 1; i < 512; i++) {
                 uintptr_t listEntry = mem.Read<uintptr_t>(entityList + (8 * (i & 0x7FFF) >> 9) + 16);
                 if (!listEntry) continue;
@@ -179,7 +160,7 @@ int main() {
                 uintptr_t controller = mem.Read<uintptr_t>(listEntry + 120 * (i & 0x1FF));
                 if (!controller) continue;
 
-                uintptr_t pawnHandle = mem.Read<uintptr_t>(controller + schema::m_hPlayerPawn);
+                uintptr_t pawnHandle = mem.Read<uintptr_t>(controller + schema::CCSPlayerController::m_hPlayerPawn);
                 if (!pawnHandle) continue;
 
                 uintptr_t pListEntry = mem.Read<uintptr_t>(entityList + 0x8 * ((pawnHandle & 0x7FFF) >> 9) + 16);
@@ -188,25 +169,23 @@ int main() {
                 uintptr_t pawn = mem.Read<uintptr_t>(pListEntry + 120 * (pawnHandle & 0x1FF));
                 if (!pawn || pawn == localPlayerPawn) continue;
 
-                int health = mem.Read<int>(pawn + schema::m_iHealth);
-                // In some versions health might be at a different offset, let's just count valid pawns first
+                int health = mem.Read<int>(pawn + schema::C_BaseEntity::m_iHealth);
                 entitiesFound++;
 
                 if (health <= 0 || health > 100) continue;
 
-                int team = mem.Read<int>(pawn + schema::m_iTeamNum);
+                int team = mem.Read<int>(pawn + schema::C_BaseEntity::m_iTeamNum);
                 
-                uintptr_t sceneNode = mem.Read<uintptr_t>(pawn + schema::m_pGameSceneNode);
-                if (entitiesFound == 1) firstSceneNode = sceneNode;
+                uintptr_t sceneNode = mem.Read<uintptr_t>(pawn + schema::C_BaseEntity::m_pGameSceneNode);
                 if (!sceneNode) continue;
 
-                Vector3 origin = mem.Read<Vector3>(sceneNode + schema::m_vecAbsOrigin);
+                Vector3 origin = mem.Read<Vector3>(sceneNode + schema::CGameSceneNode::m_vecAbsOrigin);
                 Vector3 head = origin + Vector3{ 0, 0, 72.f }; 
 
                 if (entitiesFound == 1) {
+                    firstSceneNode = sceneNode;
                     firstEntityPos = origin;
-                    float w = viewMatrix.m[3][0] * origin.x + viewMatrix.m[3][1] * origin.y + viewMatrix.m[3][2] * origin.z + viewMatrix.m[3][3];
-                    firstEntityW = w;
+                    firstEntityW = viewMatrix.m[3][0] * origin.x + viewMatrix.m[3][1] * origin.y + viewMatrix.m[3][2] * origin.z + viewMatrix.m[3][3];
                 }
 
                 Vector2 screenOrigin, screenHead;
@@ -228,16 +207,17 @@ int main() {
                     ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x, screenHead.y), ImVec2(x + width, screenOrigin.y), color);
                 }
             }
+            
+            char buf[128];
             sprintf_s(buf, "Entities: %d", entitiesFound);
             ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 55), ImColor(255, 255, 255), buf);
             sprintf_s(buf, "Drawn: %d", drawnEntities);
             ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 100), ImColor(255, 255, 255), buf);
 
-            // Detailed first entity debug
             if (entitiesFound > 0) {
                 sprintf_s(buf, "SN: 0x%llX | Pos: %.1f %.1f %.1f", firstSceneNode, firstEntityPos.x, firstEntityPos.y, firstEntityPos.z);
                 ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 115), ImColor(255, 255, 255), buf);
-                sprintf_s(buf, "W: %.2f | OK: %d | Health: %d", firstEntityW, firstW2S, mem.Read<int>(firstSceneNode - 0x330 + schema::m_iHealth)); // Quick health verification
+                sprintf_s(buf, "W: %.2f | OK: %d", firstEntityW, firstW2S);
                 ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 130), ImColor(255, 255, 255), buf);
             }
         }
