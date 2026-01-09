@@ -139,19 +139,13 @@ int main() {
             uintptr_t entityList = mem.Read<uintptr_t>(client + offsets::dwEntityList);
             Matrix4x4 viewMatrix = mem.Read<Matrix4x4>(client + offsets::dwViewMatrix);
 
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 10), ImColor(255, 255, 255), "ESP Active");
+            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 10), ImColor(255, 255, 255), "ESP Active - Press END to exit");
             
             ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2 - 10, screenHeight / 2), ImVec2(screenWidth / 2 + 10, screenHeight / 2), ImColor(255, 255, 255), 1.0f);
             ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2, screenHeight / 2 - 10), ImVec2(screenWidth / 2, screenHeight / 2 + 10), ImColor(255, 255, 255), 1.0f);
 
             int entitiesFound = 0;
             int drawnEntities = 0;
-            
-            Vector3 firstEntityPos = { 0, 0, 0 };
-            float firstEntityW = 0;
-            Vector2 firstEntityScreen = { 0, 0 };
-            uintptr_t firstSceneNode = 0;
-            bool firstW2S = false;
 
             for (int i = 1; i < 64; i++) {
                 uintptr_t listEntry = mem.Read<uintptr_t>(entityList + (8 * (i & 0x7FFF) >> 9) + 16);
@@ -170,9 +164,9 @@ int main() {
                 if (!pawn || pawn == localPlayerPawn) continue;
 
                 int health = mem.Read<int>(pawn + schema::C_BaseEntity::m_iHealth);
-                entitiesFound++;
-
                 if (health <= 0 || health > 100) continue;
+
+                entitiesFound++;
 
                 int team = mem.Read<int>(pawn + schema::C_BaseEntity::m_iTeamNum);
                 
@@ -180,48 +174,48 @@ int main() {
                 if (!sceneNode) continue;
 
                 Vector3 origin = mem.Read<Vector3>(sceneNode + schema::CGameSceneNode::m_vecAbsOrigin);
-                Vector3 head = origin + Vector3{ 0, 0, 72.f }; 
+                Vector3 head = origin + Vector3{ 0, 0, 75.0f };
 
-                if (entitiesFound == 1) {
-                    firstSceneNode = sceneNode;
-                    firstEntityPos = origin;
-                    firstEntityW = viewMatrix.m[3][0] * origin.x + viewMatrix.m[3][1] * origin.y + viewMatrix.m[3][2] * origin.z + viewMatrix.m[3][3];
-                }
+                Vector2 screenFeet, screenHead;
+                if (!WorldToScreen(origin, screenFeet, viewMatrix, screenWidth, screenHeight)) continue;
+                if (!WorldToScreen(head, screenHead, viewMatrix, screenWidth, screenHeight)) continue;
 
-                Vector2 screenOrigin, screenHead;
-                bool success = WorldToScreen(origin, screenOrigin, viewMatrix, screenWidth, screenHeight) &&
-                               WorldToScreen(head, screenHead, viewMatrix, screenWidth, screenHeight);
+                drawnEntities++;
 
-                if (entitiesFound == 1) {
-                    firstW2S = success;
-                    firstEntityScreen = screenOrigin;
-                }
+                float boxHeight = screenFeet.y - screenHead.y;
+                float boxWidth = boxHeight * 0.4f;
+                
+                float topX = screenHead.x - (boxWidth / 2.0f);
+                float topY = screenHead.y;
+                float bottomX = topX + boxWidth;
+                float bottomY = screenFeet.y;
 
-                if (success) {
-                    drawnEntities++;
-                    float height = screenOrigin.y - screenHead.y;
-                    float width = height / 2.0f;
-                    float x = screenHead.x - width / 2.0f;
+                ImColor boxColor = (team == localTeam) ? ImColor(0, 255, 0, 255) : ImColor(255, 0, 0, 255);
+                
+                ImGui::GetBackgroundDrawList()->AddRect(
+                    ImVec2(topX, topY),
+                    ImVec2(bottomX, bottomY),
+                    boxColor,
+                    0.0f,
+                    0,
+                    2.0f
+                );
 
-                    ImColor color = (team == localTeam) ? ImColor(0, 255, 0) : ImColor(255, 0, 0);
-                    ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x, screenHead.y), ImVec2(x + width, screenOrigin.y), color);
-                }
+                char healthText[16];
+                sprintf_s(healthText, "%d HP", health);
+                ImGui::GetBackgroundDrawList()->AddText(
+                    ImVec2(topX, topY - 15),
+                    ImColor(255, 255, 255),
+                    healthText
+                );
             }
             
             char buf[128];
-            sprintf_s(buf, "Entities: %d", entitiesFound);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 55), ImColor(255, 255, 255), buf);
-            sprintf_s(buf, "Drawn: %d", drawnEntities);
-            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 100), ImColor(255, 255, 255), buf);
-
-            if (entitiesFound > 0) {
-                sprintf_s(buf, "SN: 0x%llX | Pos: %.1f %.1f %.1f", firstSceneNode, firstEntityPos.x, firstEntityPos.y, firstEntityPos.z);
-                ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 115), ImColor(255, 255, 255), buf);
-                sprintf_s(buf, "W: %.2f | OK: %d | LP: 0x%llX", firstEntityW, firstW2S, localPlayerPawn);
-                ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 130), ImColor(255, 255, 255), buf);
-                sprintf_s(buf, "VM[0][0]: %.2f | EL: 0x%llX", viewMatrix.m[0][0], entityList);
-                ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 145), ImColor(255, 255, 255), buf);
-            }
+            sprintf_s(buf, "Players Found: %d | Drawn: %d", entitiesFound, drawnEntities);
+            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 30), ImColor(255, 255, 0), buf);
+        }
+        else {
+            ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 30), ImColor(255, 0, 0), "Waiting for local player...");
         }
 
         ImGui::Render();
