@@ -141,11 +141,14 @@ int main() {
 
             ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 10), ImColor(255, 255, 255), "ESP Active - Press END to exit");
             
-            ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2 - 10, screenHeight / 2), ImVec2(screenWidth / 2 + 10, screenHeight / 2), ImColor(255, 255, 255), 1.0f);
-            ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2, screenHeight / 2 - 10), ImVec2(screenWidth / 2, screenHeight / 2 + 10), ImColor(255, 255, 255), 1.0f);
+            ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2 - 10, screenHeight / 2), ImVec2(screenWidth / 2 + 10, screenHeight / 2), ImColor(0, 255, 0), 2.0f);
+            ImGui::GetBackgroundDrawList()->AddLine(ImVec2(screenWidth / 2, screenHeight / 2 - 10), ImVec2(screenWidth / 2, screenHeight / 2 + 10), ImColor(0, 255, 0), 2.0f);
 
             int entitiesFound = 0;
             int drawnEntities = 0;
+            int w2sFailed = 0;
+
+            bool validMatrix = (viewMatrix.m[0][0] != 0.0f && viewMatrix.m[1][1] != 0.0f);
 
             for (int i = 1; i < 64; i++) {
                 uintptr_t listEntry = mem.Read<uintptr_t>(entityList + (8 * (i & 0x7FFF) >> 9) + 16);
@@ -174,16 +177,26 @@ int main() {
                 if (!sceneNode) continue;
 
                 Vector3 origin = mem.Read<Vector3>(sceneNode + schema::CGameSceneNode::m_vecAbsOrigin);
-                Vector3 head = origin + Vector3{ 0, 0, 75.0f };
+                Vector3 head = origin;
+                head.z += 72.0f;
 
                 Vector2 screenFeet, screenHead;
-                if (!WorldToScreen(origin, screenFeet, viewMatrix, screenWidth, screenHeight)) continue;
-                if (!WorldToScreen(head, screenHead, viewMatrix, screenWidth, screenHeight)) continue;
+                bool feetOnScreen = WorldToScreen(origin, screenFeet, viewMatrix, screenWidth, screenHeight);
+                bool headOnScreen = WorldToScreen(head, screenHead, viewMatrix, screenWidth, screenHeight);
+
+                if (!feetOnScreen || !headOnScreen) {
+                    w2sFailed++;
+                    continue;
+                }
+
+                if (screenHead.y >= screenFeet.y) continue;
+                if (screenHead.x < 0 || screenHead.x > screenWidth) continue;
+                if (screenFeet.y < 0 || screenFeet.y > screenHeight) continue;
 
                 drawnEntities++;
 
                 float boxHeight = screenFeet.y - screenHead.y;
-                float boxWidth = boxHeight * 0.4f;
+                float boxWidth = boxHeight * 0.35f;
                 
                 float topX = screenHead.x - (boxWidth / 2.0f);
                 float topY = screenHead.y;
@@ -210,8 +223,9 @@ int main() {
                 );
             }
             
-            char buf[128];
-            sprintf_s(buf, "Players Found: %d | Drawn: %d", entitiesFound, drawnEntities);
+            char buf[256];
+            sprintf_s(buf, "Players: %d | Drawn: %d | W2S Failed: %d | Matrix: %s", 
+                entitiesFound, drawnEntities, w2sFailed, validMatrix ? "OK" : "INVALID");
             ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 30), ImColor(255, 255, 0), buf);
         }
         else {
