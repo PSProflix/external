@@ -153,20 +153,20 @@ int main() {
             uintptr_t firstSceneNode = 0;
             bool firstW2S = false;
 
-            for (int i = 1; i < 512; i++) {
+            for (int i = 1; i < 64; i++) {
                 uintptr_t listEntry = mem.Read<uintptr_t>(entityList + (8 * (i & 0x7FFF) >> 9) + 16);
                 if (!listEntry) continue;
 
                 uintptr_t controller = mem.Read<uintptr_t>(listEntry + 120 * (i & 0x1FF));
                 if (!controller) continue;
 
-                uintptr_t pawnHandle = mem.Read<uintptr_t>(controller + schema::CCSPlayerController::m_hPlayerPawn);
-                if (!pawnHandle) continue;
+                uint32_t pawnHandle = mem.Read<uint32_t>(controller + schema::CCSPlayerController::m_hPlayerPawn);
+                if (pawnHandle == 0xFFFFFFFF) continue;
 
-                uintptr_t pListEntry = mem.Read<uintptr_t>(entityList + 0x8 * ((pawnHandle & 0x7FFF) >> 9) + 16);
-                if (!pListEntry) continue;
+                uintptr_t listEntry2 = mem.Read<uintptr_t>(entityList + (8 * ((pawnHandle & 0x7FFF) >> 9)) + 16);
+                if (!listEntry2) continue;
 
-                uintptr_t pawn = mem.Read<uintptr_t>(pListEntry + 120 * (pawnHandle & 0x1FF));
+                uintptr_t pawn = mem.Read<uintptr_t>(listEntry2 + 120 * (pawnHandle & 0x1FF));
                 if (!pawn || pawn == localPlayerPawn) continue;
 
                 int health = mem.Read<int>(pawn + schema::C_BaseEntity::m_iHealth);
