@@ -217,8 +217,10 @@ int main() {
             if (entitiesFound > 0) {
                 sprintf_s(buf, "SN: 0x%llX | Pos: %.1f %.1f %.1f", firstSceneNode, firstEntityPos.x, firstEntityPos.y, firstEntityPos.z);
                 ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 115), ImColor(255, 255, 255), buf);
-                sprintf_s(buf, "W: %.2f | OK: %d", firstEntityW, firstW2S);
+                sprintf_s(buf, "W: %.2f | OK: %d | LP: 0x%llX", firstEntityW, firstW2S, localPlayerPawn);
                 ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 130), ImColor(255, 255, 255), buf);
+                sprintf_s(buf, "VM[0][0]: %.2f | EL: 0x%llX", viewMatrix.m[0][0], entityList);
+                ImGui::GetBackgroundDrawList()->AddText(ImVec2(10, 145), ImColor(255, 255, 255), buf);
             }
         }
 
